@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .env
 latent_space.png
+best_params.txt
