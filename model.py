@@ -5,11 +5,11 @@ model.py — Unpaired Multimodal Learner for Stanford Cars classification.
 Architecture:
     1. Image encoder  — ViT-Small/16 (timm) → Linear → 512-d
     2. Text encoder   — DistilBERT (HuggingFace) → Linear → 512-d
-    3. Shared backbone — 4-layer TransformerEncoder
+    3. Shared backbone — MLP (LayerNorm → Linear → GELU)
     4. Classification  — Linear → 196 classes
 
 The forward pass accepts *either* an image batch or a text batch (not both),
-routes through the matching encoder, then through the shared backbone and
+routes through the matching encoder, then through the shared MLP backbone and
 classification head.
 """
 
@@ -54,7 +54,8 @@ class TextEncoder(nn.Module):
 
     def forward(self, input_ids, attention_mask):
         """input_ids, attention_mask: (B, seq_len) → (B, proj_dim)"""
-        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+        outputs = self.backbone(input_ids=input_ids,
+                                attention_mask=attention_mask)
         cls_embedding = outputs.last_hidden_state[:, 0]   # (B, 768)
         return self.proj(cls_embedding)                    # (B, 512)
 
@@ -72,23 +73,17 @@ class UnpairedMultimodalLearner(nn.Module):
         Number of output classes (default 196 for Stanford Cars).
     proj_dim : int
         Shared embedding dimensionality produced by both encoders.
-    num_backbone_layers : int
-        Number of layers in the shared TransformerEncoder backbone.
-    nhead : int
-        Number of attention heads in each backbone layer.
-    dim_feedforward : int
-        Feed-forward width inside each backbone layer.
+    hidden_dim : int
+        Hidden dimension size for the shared MLP backbone.
     dropout : float
-        Dropout applied inside the backbone.
+        Dropout probability for the shared backbone.
     """
 
     def __init__(
         self,
         num_classes=196,
         proj_dim=512,
-        num_backbone_layers=4,
-        nhead=8,
-        dim_feedforward=2048,
+        hidden_dim=2048,
         dropout=0.1,
     ):
         super().__init__()
@@ -98,16 +93,16 @@ class UnpairedMultimodalLearner(nn.Module):
         self.image_encoder = ImageEncoder(proj_dim=proj_dim)
         self.text_encoder = TextEncoder(proj_dim=proj_dim)
 
-        # Shared backbone (operates on a length-1 sequence per sample)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=proj_dim,
-            nhead=nhead,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.shared_backbone = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_backbone_layers,
+        # Shared MLP backbone
+        self.shared_backbone = nn.Sequential(
+            nn.Linear(proj_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, proj_dim),
+            nn.LayerNorm(proj_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
         )
 
         # Classification head
@@ -142,12 +137,10 @@ class UnpairedMultimodalLearner(nn.Module):
         """
         emb = self._encode(image, input_ids, attention_mask)  # (B, proj_dim)
 
-        # Shared backbone expects (B, S, D); treat each sample as a length-1 sequence
-        emb = emb.unsqueeze(1)                                # (B, 1, proj_dim)
-        emb = self.shared_backbone(emb)                       # (B, 1, proj_dim)
-        emb = emb.squeeze(1)                                  # (B, proj_dim)
+        emb = self.shared_backbone(emb)                       # (B, proj_dim)
 
-        return self.classifier(emb)                           # (B, num_classes)
+        # (B, num_classes)
+        return self.classifier(emb)
 
 
 # ---------------------------------------------------------------------------

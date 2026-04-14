@@ -112,8 +112,10 @@ def train(args):
     # ------------------------------------------------------------------
     # Model / optimizer / loss
     # ------------------------------------------------------------------
-    model = UnpairedMultimodalLearner(num_classes=len(full_image_ds.classes)).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    model = UnpairedMultimodalLearner(
+        num_classes=len(full_image_ds.classes)).to(device)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=args.lr, weight_decay=args.wd)
     criterion = nn.CrossEntropyLoss()
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -134,8 +136,10 @@ def train(args):
     steps_per_epoch = max(len(train_img_loader), len(text_loader))
 
     text_iter = cycle(text_loader)
+    img_iter = cycle(train_img_loader)
 
-    logger.info("Training for %d epochs (%d steps/epoch)", args.epochs, steps_per_epoch)
+    logger.info("Training for %d epochs (%d steps/epoch)",
+                args.epochs, steps_per_epoch)
     for epoch in range(1, args.epochs + 1):
         model.train()
         epoch_img_loss = 0.0
@@ -143,8 +147,6 @@ def train(args):
         img_steps = 0
         txt_steps = 0
         t0 = time.time()
-
-        img_iter = cycle(train_img_loader)
 
         for step in range(1, steps_per_epoch + 1):
             # --- Image batch ---
@@ -196,18 +198,21 @@ def train(args):
 
         # --- Validation ---
         val_acc, val_loss = evaluate(model, val_img_loader, device)
-        logger.info("Epoch %d val — acc=%.4f  loss=%.4f", epoch, val_acc, val_loss)
+        logger.info("Epoch %d val — acc=%.4f  loss=%.4f",
+                    epoch, val_acc, val_loss)
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), best_path)
-            logger.info("Saved new best model (val_acc=%.4f) → %s", val_acc, best_path)
+            logger.info("Saved new best model (val_acc=%.4f) → %s",
+                        val_acc, best_path)
 
     # ------------------------------------------------------------------
     # Final test evaluation
     # ------------------------------------------------------------------
     logger.info("Loading best checkpoint for test evaluation: %s", best_path)
-    model.load_state_dict(torch.load(best_path, map_location=device, weights_only=True))
+    model.load_state_dict(torch.load(
+        best_path, map_location=device, weights_only=True))
     test_acc, test_loss = evaluate(model, test_img_loader, device)
     print(f"\n{'='*50}")
     print(f"  Test top-1 accuracy: {test_acc:.4f}")
@@ -220,7 +225,8 @@ def train(args):
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Train the Unpaired Multimodal Learner.")
+    parser = argparse.ArgumentParser(
+        description="Train the Unpaired Multimodal Learner.")
     parser.add_argument("--data-dir", default="./data")
     parser.add_argument("--checkpoint-dir", default="./checkpoints")
     parser.add_argument("--epochs", type=int, default=20)
