@@ -77,7 +77,7 @@ FinalProject/
 
 ```bash
 # Clone the repository
-git clone <REPOSITORY_URL>
+git clone [repository](https://github.com/arulagarwal/CS5330-Final_Project)
 cd FinalProject
 
 # Create and activate a virtual environment
