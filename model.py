@@ -35,15 +35,16 @@ class ImageEncoder(nn.Module):
         self.proj = nn.Linear(backbone_dim, proj_dim)
 
     def forward(self, pixel_values):
-        """pixel_values: (B, 3, 224, 224) → (B, proj_dim)"""
-        features = self.backbone(pixel_values)     # (B, 384)
-        return self.proj(features)                  # (B, 512)
+        """pixel_values: (B, 3, 224, 224) → (B, num_patches+1, proj_dim)"""
+        features = self.backbone.forward_features(pixel_values)  # (B, 197, 384)
+        return self.proj(features)                                # (B, 197, 512)
 
 
 class TextEncoder(nn.Module):
     """Pre-trained DistilBERT with a linear projection to *proj_dim*.
 
-    Uses the [CLS] token output as the sentence representation.
+    Returns the full token sequence so the shared backbone can attend
+    over all word positions (the [CLS] token is at index 0).
     """
 
     def __init__(self, proj_dim=512, model_name="distilbert-base-uncased"):
@@ -53,10 +54,9 @@ class TextEncoder(nn.Module):
         self.proj = nn.Linear(backbone_dim, proj_dim)
 
     def forward(self, input_ids, attention_mask):
-        """input_ids, attention_mask: (B, seq_len) → (B, proj_dim)"""
+        """input_ids, attention_mask: (B, seq_len) → (B, seq_len, proj_dim)"""
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        cls_embedding = outputs.last_hidden_state[:, 0]   # (B, 768)
-        return self.proj(cls_embedding)                    # (B, 512)
+        return self.proj(outputs.last_hidden_state)        # (B, seq_len, 512)
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ class UnpairedMultimodalLearner(nn.Module):
         self.image_encoder = ImageEncoder(proj_dim=proj_dim)
         self.text_encoder = TextEncoder(proj_dim=proj_dim)
 
-        # Shared backbone (operates on a length-1 sequence per sample)
+        # Shared backbone (operates on full token sequences from either modality)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=proj_dim,
             nhead=nhead,
@@ -114,7 +114,7 @@ class UnpairedMultimodalLearner(nn.Module):
         self.classifier = nn.Linear(proj_dim, num_classes)
 
     def _encode(self, image=None, input_ids=None, attention_mask=None):
-        """Route through the correct modality encoder. Returns (B, proj_dim)."""
+        """Route through the correct modality encoder. Returns (B, S, proj_dim)."""
         if image is not None:
             return self.image_encoder(image)
         if input_ids is not None:
@@ -140,14 +140,15 @@ class UnpairedMultimodalLearner(nn.Module):
         logits : Tensor
             (B, num_classes) raw class scores.
         """
-        emb = self._encode(image, input_ids, attention_mask)  # (B, proj_dim)
+        emb = self._encode(image, input_ids, attention_mask)  # (B, S, proj_dim)
 
-        # Shared backbone expects (B, S, D); treat each sample as a length-1 sequence
-        emb = emb.unsqueeze(1)                                # (B, 1, proj_dim)
-        emb = self.shared_backbone(emb)                       # (B, 1, proj_dim)
-        emb = emb.squeeze(1)                                  # (B, proj_dim)
+        # Full sequence through the shared backbone
+        emb = self.shared_backbone(emb)                       # (B, S, proj_dim)
 
-        return self.classifier(emb)                           # (B, num_classes)
+        # Extract the [CLS] token (position 0) for classification
+        cls_token = emb[:, 0, :]                              # (B, proj_dim)
+
+        return self.classifier(cls_token)                     # (B, num_classes)
 
 
 # ---------------------------------------------------------------------------
