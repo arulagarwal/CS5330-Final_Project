@@ -106,19 +106,17 @@ def run_trial(lr, proj_dim, num_classes, train_img_loader, text_loader,
         img_iter = cycle(train_img_loader)
 
         for _ in range(steps_per_epoch):
-            # --- Image batch ---
+            optimizer.zero_grad()
+
+            # --- Image forward ---
             img_batch = next(img_iter)
             images = img_batch["image"].to(device)
             img_labels = img_batch["label"].to(device)
 
             logits_img = model(image=images)
             loss_img = criterion(logits_img, img_labels)
-            optimizer.zero_grad()
-            loss_img.backward()
-            optimizer.step()
-            epoch_img_loss += loss_img.item()
 
-            # --- Text batch ---
+            # --- Text forward ---
             txt_batch = next(text_iter)
             input_ids = txt_batch["input_ids"].to(device)
             attn_mask = txt_batch["attention_mask"].to(device)
@@ -126,9 +124,13 @@ def run_trial(lr, proj_dim, num_classes, train_img_loader, text_loader,
 
             logits_txt = model(input_ids=input_ids, attention_mask=attn_mask)
             loss_txt = criterion(logits_txt, txt_labels)
-            optimizer.zero_grad()
-            loss_txt.backward()
+
+            # --- Combined backward + step ---
+            total_loss = loss_img + loss_txt
+            total_loss.backward()
             optimizer.step()
+
+            epoch_img_loss += loss_img.item()
             epoch_txt_loss += loss_txt.item()
 
         elapsed = time.time() - t0

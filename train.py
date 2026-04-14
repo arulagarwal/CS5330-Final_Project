@@ -147,7 +147,9 @@ def train(args):
         img_iter = cycle(train_img_loader)
 
         for step in range(1, steps_per_epoch + 1):
-            # --- Image batch ---
+            optimizer.zero_grad()
+
+            # --- Image forward ---
             img_batch = next(img_iter)
             images = img_batch["image"].to(device)
             img_labels = img_batch["label"].to(device)
@@ -155,14 +157,7 @@ def train(args):
             logits_img = model(image=images)
             loss_img = criterion(logits_img, img_labels)
 
-            optimizer.zero_grad()
-            loss_img.backward()
-            optimizer.step()
-
-            epoch_img_loss += loss_img.item()
-            img_steps += 1
-
-            # --- Text batch ---
+            # --- Text forward ---
             txt_batch = next(text_iter)
             input_ids = txt_batch["input_ids"].to(device)
             attn_mask = txt_batch["attention_mask"].to(device)
@@ -171,10 +166,13 @@ def train(args):
             logits_txt = model(input_ids=input_ids, attention_mask=attn_mask)
             loss_txt = criterion(logits_txt, txt_labels)
 
-            optimizer.zero_grad()
-            loss_txt.backward()
+            # --- Combined backward + step ---
+            total_loss = loss_img + loss_txt
+            total_loss.backward()
             optimizer.step()
 
+            epoch_img_loss += loss_img.item()
+            img_steps += 1
             epoch_txt_loss += loss_txt.item()
             txt_steps += 1
 
