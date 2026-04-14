@@ -77,8 +77,8 @@ FinalProject/
 
 ```bash
 # Clone the repository
-git clone [repository](https://github.com/arulagarwal/CS5330-Final_Project)
-cd FinalProject
+git clone https://github.com/arulagarwal/CS5330-Final_Project.git
+cd CS5330-Final_Project
 
 # Create and activate a virtual environment
 python -m venv venv
@@ -96,15 +96,12 @@ After running `download_data.py`, the `data/images/` directory will contain 196 
 
 ### 2. Training on Google Colab Pro (GPU Runtime)
 
-Upload the project to Google Drive, then run the following in a Colab notebook with a GPU runtime selected:
+Run the following in a Colab notebook with a GPU runtime selected. The repository is public, so it can be cloned directly -- no Drive mounting required:
 
 ```python
-# Mount Google Drive
-from google.colab import drive
-drive.mount('/content/drive')
-
-# Navigate to the project directory
-%cd /content/drive/MyDrive/<PATH_TO_PROJECT>/FinalProject
+# Clone the repository
+!git clone https://github.com/arulagarwal/CS5330-Final_Project.git
+%cd CS5330-Final_Project
 
 # Install dependencies
 !pip install -r requirements.txt
