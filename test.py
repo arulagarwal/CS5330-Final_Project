@@ -39,12 +39,11 @@ def get_device():
 @torch.no_grad()
 def extract_backbone_embeddings(model, image=None, input_ids=None,
                                 attention_mask=None):
-    """Run the encoder + shared backbone and return the 512-d embeddings
+    """Run the encoder + shared backbone and return the 512-d [CLS] embeddings
     *before* the classification head."""
-    emb = model._encode(image, input_ids, attention_mask)   # (B, 512)
-    emb = emb.unsqueeze(1)                                  # (B, 1, 512)
-    emb = model.shared_backbone(emb)                        # (B, 1, 512)
-    return emb.squeeze(1)                                   # (B, 512)
+    emb = model._encode(image, input_ids, attention_mask)   # (B, S, 512)
+    emb = model.shared_backbone(emb)                        # (B, S, 512)
+    return emb[:, 0, :]                                     # (B, 512)
 
 
 # ---------------------------------------------------------------------------
