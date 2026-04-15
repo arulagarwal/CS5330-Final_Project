@@ -37,13 +37,14 @@ def get_device():
 
 
 @torch.no_grad()
-def extract_backbone_embeddings(model, image=None, input_ids=None,
-                                attention_mask=None):
-    """Run the encoder + shared backbone and return the 512-d [CLS] embeddings
-    *before* the classification head."""
-    emb = model._encode(image, input_ids, attention_mask)   # (B, S, 512)
-    emb = model.shared_backbone(emb)                        # (B, S, 512)
-    return emb[:, 0, :]                                     # (B, 512)
+def extract_embeddings(model, image=None, input_ids=None,
+                       attention_mask=None):
+    """Run the modality encoder and return 512-d embeddings before the classifier."""
+    if image is not None:
+        return model.image_encoder(image)                   # (B, 512)
+    if attention_mask is None and input_ids is not None:
+        attention_mask = torch.ones_like(input_ids)
+    return model.text_encoder(input_ids, attention_mask)    # (B, 512)
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +161,7 @@ def main():
     img_embeds, img_labels = [], []
     for batch in img_loader:
         images = batch["image"].to(device)
-        emb = extract_backbone_embeddings(model, image=images)
+        emb = extract_embeddings(model, image=images)
         img_embeds.append(emb.cpu())
         img_labels.extend(batch["label"].tolist())
 
@@ -168,7 +169,7 @@ def main():
     for batch in txt_loader:
         ids = batch["input_ids"].to(device)
         mask = batch["attention_mask"].to(device)
-        emb = extract_backbone_embeddings(model, input_ids=ids, attention_mask=mask)
+        emb = extract_embeddings(model, input_ids=ids, attention_mask=mask)
         txt_embeds.append(emb.cpu())
         txt_labels.extend(batch["label"].tolist())
 

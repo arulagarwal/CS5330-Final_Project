@@ -84,8 +84,6 @@ def run_trial(lr, proj_dim, num_classes, train_img_loader, text_loader,
     model = UnpairedMultimodalLearner(
         num_classes=num_classes,
         proj_dim=proj_dim,
-        nhead=8,
-        dim_feedforward=proj_dim * 4,
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)

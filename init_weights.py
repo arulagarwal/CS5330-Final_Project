@@ -65,9 +65,8 @@ def compute_text_anchors(text_dir, proj_dim=512, max_length=64, batch_size=64):
         attn_mask = batch["attention_mask"].to(device)
         labels = batch["label"]
 
-        # TextEncoder returns (B, seq_len, proj_dim); take [CLS] at position 0
-        token_embeds = encoder(input_ids, attn_mask)      # (B, seq_len, 512)
-        cls_embeds = token_embeds[:, 0, :]                 # (B, 512)
+        # TextEncoder returns (B, proj_dim) — the [CLS] embedding
+        cls_embeds = encoder(input_ids, attn_mask)         # (B, 512)
 
         for emb, label in zip(cls_embeds.cpu(), labels.tolist()):
             class_embeds[label].append(emb)
