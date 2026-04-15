@@ -6,3 +6,4 @@ __pycache__/
 .env
 latent_space.png
 best_params.txt
+text_anchors.pt
