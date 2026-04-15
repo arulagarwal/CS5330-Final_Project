@@ -2,15 +2,12 @@
 """
 model.py — Unpaired Multimodal Learner for Stanford Cars classification.
 
-Architecture:
-    1. Image encoder  — ViT-Small/16 (timm) → Linear → 512-d
-    2. Text encoder   — DistilBERT (HuggingFace) → Linear → 512-d
-    3. Shared backbone — 4-layer TransformerEncoder
-    4. Classification  — Linear → 196 classes
+Architecture (following the reference UML paper):
+    1. Image encoder  — ViT-Small/16 (timm) → Linear → 512-d pooled features
+    2. Text encoder   — DistilBERT (HuggingFace) → Linear → 512-d [CLS] features
+    3. Classification  — Linear → 196 classes, scaled by a learnable img_scale
 
-The forward pass accepts *either* an image batch or a text batch (not both),
-routes through the matching encoder, then through the shared backbone and
-classification head.
+The classifier can be initialized with zero-shot text anchors via zero_shot_init().
 """
 
 import torch
@@ -35,16 +32,15 @@ class ImageEncoder(nn.Module):
         self.proj = nn.Linear(backbone_dim, proj_dim)
 
     def forward(self, pixel_values):
-        """pixel_values: (B, 3, 224, 224) → (B, num_patches+1, proj_dim)"""
-        features = self.backbone.forward_features(pixel_values)  # (B, 197, 384)
-        return self.proj(features)                                # (B, 197, 512)
+        """pixel_values: (B, 3, 224, 224) → (B, proj_dim)"""
+        features = self.backbone(pixel_values)     # (B, 384)
+        return self.proj(features)                  # (B, 512)
 
 
 class TextEncoder(nn.Module):
     """Pre-trained DistilBERT with a linear projection to *proj_dim*.
 
-    Returns the full token sequence so the shared backbone can attend
-    over all word positions (the [CLS] token is at index 0).
+    Returns the [CLS] token embedding as the sentence representation.
     """
 
     def __init__(self, proj_dim=512, model_name="distilbert-base-uncased"):
@@ -54,9 +50,10 @@ class TextEncoder(nn.Module):
         self.proj = nn.Linear(backbone_dim, proj_dim)
 
     def forward(self, input_ids, attention_mask):
-        """input_ids, attention_mask: (B, seq_len) → (B, seq_len, proj_dim)"""
+        """input_ids, attention_mask: (B, seq_len) → (B, proj_dim)"""
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        return self.proj(outputs.last_hidden_state)        # (B, seq_len, 512)
+        cls_embedding = outputs.last_hidden_state[:, 0]   # (B, 768)
+        return self.proj(cls_embedding)                    # (B, 512)
 
 
 # ---------------------------------------------------------------------------
@@ -66,62 +63,51 @@ class TextEncoder(nn.Module):
 class UnpairedMultimodalLearner(nn.Module):
     """Unpaired multimodal classifier for Stanford Cars.
 
+    Follows the reference UML architecture: modality-specific encoders feed
+    directly into a shared linear classifier.  A learnable ``img_scale``
+    parameter scales the image logits.  The classifier can be warm-started
+    with zero-shot text anchors via :meth:`zero_shot_init`.
+
     Parameters
     ----------
     num_classes : int
         Number of output classes (default 196 for Stanford Cars).
     proj_dim : int
         Shared embedding dimensionality produced by both encoders.
-    num_backbone_layers : int
-        Number of layers in the shared TransformerEncoder backbone.
-    nhead : int
-        Number of attention heads in each backbone layer.
-    dim_feedforward : int
-        Feed-forward width inside each backbone layer.
-    dropout : float
-        Dropout applied inside the backbone.
     """
 
-    def __init__(
-        self,
-        num_classes=196,
-        proj_dim=512,
-        num_backbone_layers=4,
-        nhead=8,
-        dim_feedforward=2048,
-        dropout=0.1,
-    ):
+    def __init__(self, num_classes=196, proj_dim=512):
         super().__init__()
         self.proj_dim = proj_dim
+        self.num_classes = num_classes
 
         # Modality encoders
         self.image_encoder = ImageEncoder(proj_dim=proj_dim)
         self.text_encoder = TextEncoder(proj_dim=proj_dim)
 
-        # Shared backbone (operates on full token sequences from either modality)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=proj_dim,
-            nhead=nhead,
-            dim_feedforward=dim_feedforward,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.shared_backbone = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_backbone_layers,
-        )
+        # Shared classification head
+        self.classifier = nn.Linear(proj_dim, num_classes, bias=False)
 
-        # Classification head
-        self.classifier = nn.Linear(proj_dim, num_classes)
+        # Learnable logit scale for images
+        self.img_scale = nn.Parameter(torch.tensor(1.0))
 
-    def _encode(self, image=None, input_ids=None, attention_mask=None):
-        """Route through the correct modality encoder. Returns (B, S, proj_dim)."""
-        if image is not None:
-            return self.image_encoder(image)
-        if input_ids is not None:
-            if attention_mask is None:
-                attention_mask = torch.ones_like(input_ids)
-            return self.text_encoder(input_ids, attention_mask)
-        raise ValueError("Provide either `image` or `input_ids`.")
+    def zero_shot_init(self, weights_path):
+        """Initialize the classifier with pre-computed text anchors.
+
+        Parameters
+        ----------
+        weights_path : str
+            Path to the ``text_anchors.pt`` file produced by ``init_weights.py``.
+            Expected to contain an ``"anchors"`` key with shape (num_classes, proj_dim).
+        """
+        data = torch.load(weights_path, map_location="cpu", weights_only=True)
+        anchors = data["anchors"]                           # (num_classes, proj_dim)
+        assert anchors.shape == (self.num_classes, self.proj_dim), (
+            f"Anchor shape {anchors.shape} does not match "
+            f"classifier ({self.num_classes}, {self.proj_dim})"
+        )
+        self.classifier.weight.data = anchors
+        print(f"=> Initialized classifier with zero-shot weights from {weights_path}")
 
     def forward(self, image=None, input_ids=None, attention_mask=None):
         """Accept an image batch **or** a text batch and return class logits.
@@ -140,15 +126,17 @@ class UnpairedMultimodalLearner(nn.Module):
         logits : Tensor
             (B, num_classes) raw class scores.
         """
-        emb = self._encode(image, input_ids, attention_mask)  # (B, S, proj_dim)
+        if image is not None:
+            img_features = self.image_encoder(image)            # (B, proj_dim)
+            return self.classifier(img_features) * self.img_scale
 
-        # Full sequence through the shared backbone
-        emb = self.shared_backbone(emb)                       # (B, S, proj_dim)
+        if input_ids is not None:
+            if attention_mask is None:
+                attention_mask = torch.ones_like(input_ids)
+            txt_features = self.text_encoder(input_ids, attention_mask)  # (B, proj_dim)
+            return self.classifier(txt_features)
 
-        # Extract the [CLS] token (position 0) for classification
-        cls_token = emb[:, 0, :]                              # (B, proj_dim)
-
-        return self.classifier(cls_token)                     # (B, num_classes)
+        raise ValueError("Provide either `image` or `input_ids`.")
 
 
 # ---------------------------------------------------------------------------
