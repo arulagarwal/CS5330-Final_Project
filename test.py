@@ -15,6 +15,7 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
 from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader, random_split, Subset
 
@@ -57,7 +58,7 @@ def main():
     )
     parser.add_argument("--data-dir", default="./data")
     parser.add_argument("--checkpoint", default="./checkpoints/best_model.pt")
-    parser.add_argument("--output", default="./latent_space.png")
+    parser.add_argument("--output", default="./latent_space_normalized.png")
     parser.add_argument("--n-classes", type=int, default=5,
                         help="Number of car classes to visualize")
     parser.add_argument("--max-images-per-class", type=int, default=20,
@@ -173,12 +174,19 @@ def main():
         txt_embeds.append(emb.cpu())
         txt_labels.extend(batch["label"].tolist())
 
-    img_embeds = torch.cat(img_embeds).numpy()
-    txt_embeds = torch.cat(txt_embeds).numpy()
+    img_embeds = torch.cat(img_embeds)
+    txt_embeds = torch.cat(txt_embeds)
+
+    # L2-normalize both modalities to close the modality gap
+    img_embeds = F.normalize(img_embeds, p=2, dim=1)
+    txt_embeds = F.normalize(txt_embeds, p=2, dim=1)
+
+    img_embeds = img_embeds.numpy()
+    txt_embeds = txt_embeds.numpy()
     img_labels = np.array(img_labels)
     txt_labels = np.array(txt_labels)
 
-    logger.info("Embedding shapes — images: %s, text: %s",
+    logger.info("Embedding shapes (L2-normalized) — images: %s, text: %s",
                 img_embeds.shape, txt_embeds.shape)
 
     # ------------------------------------------------------------------
@@ -244,7 +252,7 @@ def main():
                 label=f"{short_name(cname)} ({mod_name})",
             )
 
-    ax.set_title("Shared Backbone Latent Space (t-SNE)", fontsize=14, weight="bold")
+    ax.set_title("Latent Space — L2-Normalized (t-SNE)", fontsize=14, weight="bold")
     ax.set_xlabel("t-SNE dim 1")
     ax.set_ylabel("t-SNE dim 2")
     ax.legend(fontsize=7, loc="best", ncol=2, framealpha=0.9)
