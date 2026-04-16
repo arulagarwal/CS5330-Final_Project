@@ -16,9 +16,9 @@ import time
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 
-from dataset import ImageDataset
+from dataset import ImageDataset, get_train_transform, get_eval_transform
 from model import UnpairedMultimodalLearner
 
 logger = logging.getLogger(__name__)
@@ -68,17 +68,19 @@ def train(args):
     # ------------------------------------------------------------------
     images_dir = os.path.join(args.data_dir, "images")
 
-    full_image_ds = ImageDataset(images_dir)
+    # Two dataset instances so train gets augmentations, eval gets deterministic crops
+    full_train_ds = ImageDataset(images_dir, transform=get_train_transform())
+    full_eval_ds = ImageDataset(images_dir, transform=get_eval_transform())
 
-    # Train / val / test split for images (70 / 15 / 15)
-    n = len(full_image_ds)
+    # Shuffled index split (70 / 15 / 15)
+    n = len(full_train_ds)
+    indices = torch.randperm(n, generator=torch.Generator().manual_seed(args.seed)).tolist()
     n_train = int(0.70 * n)
     n_val = int(0.15 * n)
-    n_test = n - n_train - n_val
-    train_img_ds, val_img_ds, test_img_ds = random_split(
-        full_image_ds, [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(args.seed),
-    )
+
+    train_img_ds = Subset(full_train_ds, indices[:n_train])
+    val_img_ds = Subset(full_eval_ds, indices[n_train:n_train + n_val])
+    test_img_ds = Subset(full_eval_ds, indices[n_train + n_val:])
 
     train_img_loader = DataLoader(
         train_img_ds, batch_size=args.batch_size, shuffle=True,
@@ -101,7 +103,7 @@ def train(args):
     # ------------------------------------------------------------------
     # Model / zero-shot init / optimizer / loss
     # ------------------------------------------------------------------
-    model = UnpairedMultimodalLearner(num_classes=len(full_image_ds.classes)).to(device)
+    model = UnpairedMultimodalLearner(num_classes=len(full_train_ds.classes)).to(device)
     model.zero_shot_init(args.anchors)
     model.to(device)
 

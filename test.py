@@ -17,9 +17,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from sklearn.manifold import TSNE
-from torch.utils.data import DataLoader, random_split, Subset
+from torch.utils.data import DataLoader, Subset
 
-from dataset import ImageDataset, TextDataset
+from dataset import ImageDataset, TextDataset, get_eval_transform
 from model import UnpairedMultimodalLearner
 
 logger = logging.getLogger(__name__)
@@ -89,27 +89,27 @@ def main():
     # ------------------------------------------------------------------
     # Datasets – replicate the same train/val/test split used in train.py
     # ------------------------------------------------------------------
-    full_image_ds = ImageDataset(images_dir)
+    full_eval_ds = ImageDataset(images_dir, transform=get_eval_transform())
     text_ds = TextDataset(text_dir)
 
-    n = len(full_image_ds)
+    # Shuffled index split (same seed as train.py → identical split)
+    n = len(full_eval_ds)
+    indices = torch.randperm(n, generator=torch.Generator().manual_seed(args.seed)).tolist()
     n_train = int(0.70 * n)
     n_val = int(0.15 * n)
-    n_test = n - n_train - n_val
-    _, _, test_img_ds = random_split(
-        full_image_ds, [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(args.seed),
-    )
+    test_indices = indices[n_train + n_val:]
+
+    test_img_ds = Subset(full_eval_ds, test_indices)
 
     # ------------------------------------------------------------------
     # Pick 5 classes that appear in the test split
     # ------------------------------------------------------------------
-    test_labels = [full_image_ds.samples[i][1] for i in test_img_ds.indices]
+    test_labels = [full_eval_ds.samples[i][1] for i in test_indices]
     unique_test_labels = sorted(set(test_labels))
     chosen_labels = random.sample(unique_test_labels,
                                   min(args.n_classes, len(unique_test_labels)))
     chosen_set = set(chosen_labels)
-    label_to_class = {idx: name for name, idx in full_image_ds.class_to_idx.items()}
+    label_to_class = {idx: name for name, idx in full_eval_ds.class_to_idx.items()}
     chosen_names = [label_to_class[l] for l in chosen_labels]
     logger.info("Selected classes: %s", chosen_names)
 
@@ -117,8 +117,8 @@ def main():
     # Gather image indices from the test split for the chosen classes
     # ------------------------------------------------------------------
     class_to_test_indices = {l: [] for l in chosen_labels}
-    for sub_idx, global_idx in enumerate(test_img_ds.indices):
-        label = full_image_ds.samples[global_idx][1]
+    for sub_idx, global_idx in enumerate(test_indices):
+        label = full_eval_ds.samples[global_idx][1]
         if label in chosen_set:
             class_to_test_indices[label].append(sub_idx)
 
@@ -151,7 +151,7 @@ def main():
     # ------------------------------------------------------------------
     # Load model (frozen)
     # ------------------------------------------------------------------
-    num_classes = len(full_image_ds.classes)
+    num_classes = len(full_eval_ds.classes)
     model = UnpairedMultimodalLearner(num_classes=num_classes).to(device)
     state = torch.load(args.checkpoint, map_location=device, weights_only=True)
     model.load_state_dict(state)
@@ -196,7 +196,7 @@ def main():
     # ------------------------------------------------------------------
     txt_class_to_img_label = {}
     for name in chosen_names:
-        txt_class_to_img_label[text_label_map[name]] = full_image_ds.class_to_idx[name]
+        txt_class_to_img_label[text_label_map[name]] = full_eval_ds.class_to_idx[name]
     txt_labels_mapped = np.array([txt_class_to_img_label[l] for l in txt_labels])
 
     # ------------------------------------------------------------------
