@@ -57,8 +57,10 @@ def main():
         description="Latent-space analysis of the Unpaired Multimodal Learner.",
     )
     parser.add_argument("--data-dir", default="./data")
-    parser.add_argument("--checkpoint", default="./checkpoints/best_model.pt")
-    parser.add_argument("--output", default="./latent_space_normalized.png")
+    parser.add_argument("--checkpoint", type=str, default="./checkpoints/best_model.pt",
+                        help="Path to the model weights to load.")
+    parser.add_argument("--output", type=str, default="./latent_space.png",
+                        help="Path to save the generated t-SNE plot.")
     parser.add_argument("--n-classes", type=int, default=5,
                         help="Number of car classes to visualize")
     parser.add_argument("--max-images-per-class", type=int, default=20,
