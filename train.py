@@ -105,6 +105,12 @@ def train(args):
     model.zero_shot_init(args.anchors)
     model.to(device)
 
+    if args.freeze_anchors:
+        model.classifier.weight.requires_grad = False
+        logger.info("Text anchors (classifier weights) are FROZEN.")
+    else:
+        logger.info("Text anchors (classifier weights) are UNFROZEN (Latent Drift possible).")
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
     criterion = nn.CrossEntropyLoss()
 
@@ -182,7 +188,10 @@ def main():
     parser.add_argument("--data-dir", default="./data")
     parser.add_argument("--anchors", default="./text_anchors.pt",
                         help="Path to zero-shot text anchors (default: ./text_anchors.pt)")
-    parser.add_argument("--checkpoint-dir", default="./checkpoints")
+    parser.add_argument("--freeze-anchors", action="store_true",
+                        help="Freeze the classifier weights (text anchors) during training.")
+    parser.add_argument("--checkpoint-dir", type=str, default="./checkpoints",
+                        help="Directory to save the best model.")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-4)
