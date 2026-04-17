@@ -1,0 +1,19 @@
+Unpaired Multimodal Learner — Best Hyperparameters
+==================================================
+
+Learning Rate:      0.0001
+Projection Dim:     256
+Validation Acc:     0.7959
+Validation Loss:    0.7317
+Epochs Run:         5
+
+==================================================
+Full Grid Results
+==================================================
+
+          LR   Proj Dim    Val Acc   Val Loss   Epochs
+----------------------------------------------------
+      0.0001        256     0.7959     0.7317        5
+      0.0001        512     0.7876     0.7647        5
+       5e-05        256     0.7897     0.8225        5
+       5e-05        512     0.7909     0.7969        5

@@ -1,10 +1,6 @@
 data/
 venv/
-checkpoints/
 __pycache__/
 *.pyc
 .env
-latent_space.png
-latent_space_normalized.png
-best_params.txt
-text_anchors.pt
+.DS_Store
