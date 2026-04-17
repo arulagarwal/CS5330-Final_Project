@@ -19,9 +19,9 @@ import time
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 
-from dataset import ImageDataset, TextDataset
+from dataset import ImageDataset, TextDataset, get_train_transform, get_eval_transform
 from model import UnpairedMultimodalLearner
 
 logger = logging.getLogger(__name__)
@@ -84,8 +84,6 @@ def run_trial(lr, proj_dim, num_classes, train_img_loader, text_loader,
     model = UnpairedMultimodalLearner(
         num_classes=num_classes,
         proj_dim=proj_dim,
-        nhead=8,
-        dim_feedforward=proj_dim * 4,
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
@@ -196,18 +194,19 @@ def main():
     images_dir = os.path.join(args.data_dir, "images")
     text_dir = os.path.join(args.data_dir, "text")
 
-    full_image_ds = ImageDataset(images_dir)
+    full_train_ds = ImageDataset(images_dir, transform=get_train_transform())
+    full_eval_ds = ImageDataset(images_dir, transform=get_eval_transform())
     text_ds = TextDataset(text_dir, max_length=args.max_length)
-    num_classes = len(full_image_ds.classes)
+    num_classes = len(full_train_ds.classes)
 
-    n = len(full_image_ds)
+    # Shuffled index split (70 / 15 / 15)
+    n = len(full_train_ds)
+    indices = torch.randperm(n, generator=torch.Generator().manual_seed(args.seed)).tolist()
     n_train = int(0.70 * n)
     n_val = int(0.15 * n)
-    n_test = n - n_train - n_val
-    train_img_ds, val_img_ds, _ = random_split(
-        full_image_ds, [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(args.seed),
-    )
+
+    train_img_ds = Subset(full_train_ds, indices[:n_train])
+    val_img_ds = Subset(full_eval_ds, indices[n_train:n_train + n_val])
 
     train_img_loader = DataLoader(
         train_img_ds, batch_size=args.batch_size, shuffle=True,

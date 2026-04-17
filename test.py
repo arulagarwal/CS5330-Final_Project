@@ -15,10 +15,11 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
 from sklearn.manifold import TSNE
-from torch.utils.data import DataLoader, random_split, Subset
+from torch.utils.data import DataLoader, Subset
 
-from dataset import ImageDataset, TextDataset
+from dataset import ImageDataset, TextDataset, get_eval_transform
 from model import UnpairedMultimodalLearner
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,14 @@ def get_device():
 
 
 @torch.no_grad()
-def extract_backbone_embeddings(model, image=None, input_ids=None,
-                                attention_mask=None):
-    """Run the encoder + shared backbone and return the 512-d [CLS] embeddings
-    *before* the classification head."""
-    emb = model._encode(image, input_ids, attention_mask)   # (B, S, 512)
-    emb = model.shared_backbone(emb)                        # (B, S, 512)
-    return emb[:, 0, :]                                     # (B, 512)
+def extract_embeddings(model, image=None, input_ids=None,
+                       attention_mask=None):
+    """Run the modality encoder and return 512-d embeddings before the classifier."""
+    if image is not None:
+        return model.image_encoder(image)                   # (B, 512)
+    if attention_mask is None and input_ids is not None:
+        attention_mask = torch.ones_like(input_ids)
+    return model.text_encoder(input_ids, attention_mask)    # (B, 512)
 
 
 # ---------------------------------------------------------------------------
@@ -55,8 +57,10 @@ def main():
         description="Latent-space analysis of the Unpaired Multimodal Learner.",
     )
     parser.add_argument("--data-dir", default="./data")
-    parser.add_argument("--checkpoint", default="./checkpoints/best_model.pt")
-    parser.add_argument("--output", default="./latent_space.png")
+    parser.add_argument("--checkpoint", type=str, default="./checkpoints/best_model.pt",
+                        help="Path to the model weights to load.")
+    parser.add_argument("--output", type=str, default="./latent_space.png",
+                        help="Path to save the generated t-SNE plot.")
     parser.add_argument("--n-classes", type=int, default=5,
                         help="Number of car classes to visualize")
     parser.add_argument("--max-images-per-class", type=int, default=20,
@@ -85,27 +89,27 @@ def main():
     # ------------------------------------------------------------------
     # Datasets – replicate the same train/val/test split used in train.py
     # ------------------------------------------------------------------
-    full_image_ds = ImageDataset(images_dir)
+    full_eval_ds = ImageDataset(images_dir, transform=get_eval_transform())
     text_ds = TextDataset(text_dir)
 
-    n = len(full_image_ds)
+    # Shuffled index split (same seed as train.py → identical split)
+    n = len(full_eval_ds)
+    indices = torch.randperm(n, generator=torch.Generator().manual_seed(args.seed)).tolist()
     n_train = int(0.70 * n)
     n_val = int(0.15 * n)
-    n_test = n - n_train - n_val
-    _, _, test_img_ds = random_split(
-        full_image_ds, [n_train, n_val, n_test],
-        generator=torch.Generator().manual_seed(args.seed),
-    )
+    test_indices = indices[n_train + n_val:]
+
+    test_img_ds = Subset(full_eval_ds, test_indices)
 
     # ------------------------------------------------------------------
     # Pick 5 classes that appear in the test split
     # ------------------------------------------------------------------
-    test_labels = [full_image_ds.samples[i][1] for i in test_img_ds.indices]
+    test_labels = [full_eval_ds.samples[i][1] for i in test_indices]
     unique_test_labels = sorted(set(test_labels))
     chosen_labels = random.sample(unique_test_labels,
                                   min(args.n_classes, len(unique_test_labels)))
     chosen_set = set(chosen_labels)
-    label_to_class = {idx: name for name, idx in full_image_ds.class_to_idx.items()}
+    label_to_class = {idx: name for name, idx in full_eval_ds.class_to_idx.items()}
     chosen_names = [label_to_class[l] for l in chosen_labels]
     logger.info("Selected classes: %s", chosen_names)
 
@@ -113,8 +117,8 @@ def main():
     # Gather image indices from the test split for the chosen classes
     # ------------------------------------------------------------------
     class_to_test_indices = {l: [] for l in chosen_labels}
-    for sub_idx, global_idx in enumerate(test_img_ds.indices):
-        label = full_image_ds.samples[global_idx][1]
+    for sub_idx, global_idx in enumerate(test_indices):
+        label = full_eval_ds.samples[global_idx][1]
         if label in chosen_set:
             class_to_test_indices[label].append(sub_idx)
 
@@ -147,7 +151,7 @@ def main():
     # ------------------------------------------------------------------
     # Load model (frozen)
     # ------------------------------------------------------------------
-    num_classes = len(full_image_ds.classes)
+    num_classes = len(full_eval_ds.classes)
     model = UnpairedMultimodalLearner(num_classes=num_classes).to(device)
     state = torch.load(args.checkpoint, map_location=device, weights_only=True)
     model.load_state_dict(state)
@@ -160,7 +164,7 @@ def main():
     img_embeds, img_labels = [], []
     for batch in img_loader:
         images = batch["image"].to(device)
-        emb = extract_backbone_embeddings(model, image=images)
+        emb = extract_embeddings(model, image=images)
         img_embeds.append(emb.cpu())
         img_labels.extend(batch["label"].tolist())
 
@@ -168,16 +172,23 @@ def main():
     for batch in txt_loader:
         ids = batch["input_ids"].to(device)
         mask = batch["attention_mask"].to(device)
-        emb = extract_backbone_embeddings(model, input_ids=ids, attention_mask=mask)
+        emb = extract_embeddings(model, input_ids=ids, attention_mask=mask)
         txt_embeds.append(emb.cpu())
         txt_labels.extend(batch["label"].tolist())
 
-    img_embeds = torch.cat(img_embeds).numpy()
-    txt_embeds = torch.cat(txt_embeds).numpy()
+    img_embeds = torch.cat(img_embeds)
+    txt_embeds = torch.cat(txt_embeds)
+
+    # L2-normalize both modalities to close the modality gap
+    img_embeds = F.normalize(img_embeds, p=2, dim=1)
+    txt_embeds = F.normalize(txt_embeds, p=2, dim=1)
+
+    img_embeds = img_embeds.numpy()
+    txt_embeds = txt_embeds.numpy()
     img_labels = np.array(img_labels)
     txt_labels = np.array(txt_labels)
 
-    logger.info("Embedding shapes — images: %s, text: %s",
+    logger.info("Embedding shapes (L2-normalized) — images: %s, text: %s",
                 img_embeds.shape, txt_embeds.shape)
 
     # ------------------------------------------------------------------
@@ -185,7 +196,7 @@ def main():
     # ------------------------------------------------------------------
     txt_class_to_img_label = {}
     for name in chosen_names:
-        txt_class_to_img_label[text_label_map[name]] = full_image_ds.class_to_idx[name]
+        txt_class_to_img_label[text_label_map[name]] = full_eval_ds.class_to_idx[name]
     txt_labels_mapped = np.array([txt_class_to_img_label[l] for l in txt_labels])
 
     # ------------------------------------------------------------------
@@ -243,7 +254,7 @@ def main():
                 label=f"{short_name(cname)} ({mod_name})",
             )
 
-    ax.set_title("Shared Backbone Latent Space (t-SNE)", fontsize=14, weight="bold")
+    ax.set_title("Latent Space — L2-Normalized (t-SNE)", fontsize=14, weight="bold")
     ax.set_xlabel("t-SNE dim 1")
     ax.set_ylabel("t-SNE dim 2")
     ax.legend(fontsize=7, loc="best", ncol=2, framealpha=0.9)

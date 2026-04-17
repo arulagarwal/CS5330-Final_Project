@@ -20,6 +20,36 @@ from transformers import DistilBertTokenizer
 
 
 # ---------------------------------------------------------------------------
+# Transforms
+# ---------------------------------------------------------------------------
+
+def get_train_transform():
+    """Training augmentations: random crop + flip (standard ViT pipeline)."""
+    return transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        ),
+    ])
+
+
+def get_eval_transform():
+    """Evaluation transform: deterministic resize + center crop."""
+    return transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225],
+        ),
+    ])
+
+
+# ---------------------------------------------------------------------------
 # Image Dataset
 # ---------------------------------------------------------------------------
 
