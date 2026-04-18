@@ -5,6 +5,7 @@ test.py — Latent-space analysis for the Unpaired Multimodal Learner.
 Loads frozen checkpoint weights, extracts 512-d shared-backbone embeddings
 for both image and text samples across 5 selected car classes, reduces to
 2-D with t-SNE, and saves a scatter plot to latent_space.png.
+Includes a specialized high-res plot for Slide 7.
 """
 
 import argparse
@@ -179,17 +180,19 @@ def main():
     img_embeds = torch.cat(img_embeds)
     txt_embeds = torch.cat(txt_embeds)
 
-    # L2-normalize both modalities to close the modality gap
-    img_embeds = F.normalize(img_embeds, p=2, dim=1)
-    txt_embeds = F.normalize(txt_embeds, p=2, dim=1)
-
-    img_embeds = img_embeds.numpy()
-    txt_embeds = txt_embeds.numpy()
     img_labels = np.array(img_labels)
     txt_labels = np.array(txt_labels)
 
-    logger.info("Embedding shapes (L2-normalized) — images: %s, text: %s",
-                img_embeds.shape, txt_embeds.shape)
+    # 1. Collect all embeddings as a tensor
+    all_embeddings = torch.cat([img_embeds, txt_embeds], dim=0)
+
+    # 2. L2-normalize so t-SNE plots directional alignment
+    all_embeddings = F.normalize(all_embeddings, dim=1)
+
+    # 3. Convert to numpy for t-SNE
+    all_embeddings_np = all_embeddings.cpu().numpy()
+
+    logger.info("Normalized Combined Embedding shape: %s", all_embeddings_np.shape)
 
     # ------------------------------------------------------------------
     # Map text labels (text_ds indexing) → image label space
@@ -202,13 +205,12 @@ def main():
     # ------------------------------------------------------------------
     # t-SNE reduction to 2-D
     # ------------------------------------------------------------------
-    all_embeds = np.concatenate([img_embeds, txt_embeds], axis=0)
     all_labels = np.concatenate([img_labels, txt_labels_mapped], axis=0)
     modality = np.array(
         ["Image"] * len(img_embeds) + ["Text"] * len(txt_embeds)
     )
 
-    effective_perplexity = min(args.perplexity, max(5, len(all_embeds) // 4))
+    effective_perplexity = min(args.perplexity, max(5, len(all_embeddings_np) // 4))
     tsne = TSNE(
         n_components=2,
         perplexity=effective_perplexity,
@@ -216,7 +218,7 @@ def main():
         init="pca",
         learning_rate="auto",
     )
-    coords = tsne.fit_transform(all_embeds)
+    coords = tsne.fit_transform(all_embeddings_np)
     logger.info("t-SNE complete — output shape: %s", coords.shape)
 
     # ------------------------------------------------------------------
@@ -263,6 +265,45 @@ def main():
     fig.savefig(args.output, dpi=200)
     logger.info("Plot saved to %s", args.output)
     print(f"\nLatent-space plot saved to {args.output}")
+
+    # ==========================================
+    # SLIDE 7: ISOLATED HALO PLOT
+    # ==========================================
+    logger.info("Generating isolated 'Halo' plot for Slide 7...")
+
+    # Pick the first class from our randomly selected test classes
+    target_label_idx = label_order[0]
+    class_name = label_to_class[target_label_idx]
+    short_cname = short_name(class_name)
+
+    fig2, ax2 = plt.subplots(figsize=(10, 8))
+
+    # 1. Plot ONLY the images for the target class
+    target_img_mask = (all_labels == target_label_idx) & (modality == "Image")
+    ax2.scatter(
+        coords[target_img_mask, 0], coords[target_img_mask, 1],
+        c='#1f77b4', marker='o', s=120, alpha=0.6,
+        edgecolors='white', linewidths=1.5, label='Images'
+    )
+
+    # 2. Plot ONLY the text anchor for the target class
+    target_txt_mask = (all_labels == target_label_idx) & (modality == "Text")
+    ax2.scatter(
+        coords[target_txt_mask, 0], coords[target_txt_mask, 1],
+        c='#d62728', marker='^', s=500, edgecolors='black',
+        linewidths=2, label='Text Anchor'
+    )
+
+    ax2.set_title(f'The Unpaired Halo Effect:\n{short_cname}', fontsize=20, weight='bold', pad=20)
+    ax2.legend(fontsize=14, loc='best', frameon=True, shadow=True)
+    ax2.axis('off')
+
+    fig2.tight_layout()
+    slide7_output = "halo_effect_slide7.png"
+    fig2.savefig(slide7_output, dpi=300, transparent=True)
+    
+    logger.info("Slide 7 plot saved to %s", slide7_output)
+    print(f"Isolated halo plot saved to {slide7_output}")
 
 
 if __name__ == "__main__":

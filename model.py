@@ -32,9 +32,9 @@ class ImageEncoder(nn.Module):
         self.proj = nn.Linear(backbone_dim, proj_dim)
 
     def forward(self, pixel_values):
-        """pixel_values: (B, 3, 224, 224) → (B, num_patches+1, proj_dim)"""
-        features = self.backbone.forward_features(pixel_values)  # (B, 197, 384)
-        return self.proj(features)                                # (B, 197, 512)
+        """pixel_values: (B, 3, 224, 224) → (B, proj_dim)"""
+        features = self.backbone(pixel_values)     # (B, 384)
+        return self.proj(features)                  # (B, 512)
 
 
 class TextEncoder(nn.Module):
@@ -50,9 +50,10 @@ class TextEncoder(nn.Module):
         self.proj = nn.Linear(backbone_dim, proj_dim)
 
     def forward(self, input_ids, attention_mask):
-        """input_ids, attention_mask: (B, seq_len) → (B, seq_len, proj_dim)"""
+        """input_ids, attention_mask: (B, seq_len) → (B, proj_dim)"""
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        return self.proj(outputs.last_hidden_state)        # (B, seq_len, 512)
+        cls_embedding = outputs.last_hidden_state[:, 0]   # (B, 768)
+        return self.proj(cls_embedding)                    # (B, 512)
 
 
 # ---------------------------------------------------------------------------
