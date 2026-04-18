@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader, Subset
 
-from dataset import ImageDataset, TextDataset, get_eval_transform
+from dataset import ImageDataset, get_eval_transform
 from model import UnpairedMultimodalLearner
 
 logger = logging.getLogger(__name__)
@@ -39,14 +39,9 @@ def get_device():
 
 
 @torch.no_grad()
-def extract_embeddings(model, image=None, input_ids=None,
-                       attention_mask=None):
-    """Run the modality encoder and return 512-d embeddings before the classifier."""
-    if image is not None:
-        return model.image_encoder(image)                   # (B, 512)
-    if attention_mask is None and input_ids is not None:
-        attention_mask = torch.ones_like(input_ids)
-    return model.text_encoder(input_ids, attention_mask)    # (B, 512)
+def extract_image_embeddings(model, image):
+    """Run the image encoder and return 512-d embeddings before the classifier."""
+    return model.image_encoder(image)                       # (B, 512)
 
 
 # ---------------------------------------------------------------------------
@@ -85,13 +80,11 @@ def main():
     logger.info("Using device: %s", device)
 
     images_dir = os.path.join(args.data_dir, "images")
-    text_dir = os.path.join(args.data_dir, "text")
 
     # ------------------------------------------------------------------
     # Datasets – replicate the same train/val/test split used in train.py
     # ------------------------------------------------------------------
     full_eval_ds = ImageDataset(images_dir, transform=get_eval_transform())
-    text_ds = TextDataset(text_dir)
 
     # Shuffled index split (same seed as train.py → identical split)
     n = len(full_eval_ds)
@@ -112,6 +105,7 @@ def main():
     chosen_set = set(chosen_labels)
     label_to_class = {idx: name for name, idx in full_eval_ds.class_to_idx.items()}
     chosen_names = [label_to_class[l] for l in chosen_labels]
+    label_order = sorted(chosen_labels)
     logger.info("Selected classes: %s", chosen_names)
 
     # ------------------------------------------------------------------
@@ -132,22 +126,7 @@ def main():
     img_subset = Subset(test_img_ds, selected_img_indices)
     img_loader = DataLoader(img_subset, batch_size=64, shuffle=False)
 
-    # ------------------------------------------------------------------
-    # Gather text samples for the same classes
-    # ------------------------------------------------------------------
-    text_label_map = {name: idx for name, idx in text_ds.class_to_idx.items()}
-    selected_txt_indices = []
-    for class_name in chosen_names:
-        if class_name in text_label_map:
-            txt_label = text_label_map[class_name]
-            for i, (_, lbl) in enumerate(text_ds.samples):
-                if lbl == txt_label:
-                    selected_txt_indices.append(i)
-
-    txt_subset = Subset(text_ds, selected_txt_indices)
-    txt_loader = DataLoader(txt_subset, batch_size=64, shuffle=False)
-
-    logger.info("Samples — images: %d, text: %d", len(img_subset), len(txt_subset))
+    logger.info("Image samples: %d", len(img_subset))
 
     # ------------------------------------------------------------------
     # Load model (frozen)
@@ -160,54 +139,61 @@ def main():
     logger.info("Loaded checkpoint: %s", args.checkpoint)
 
     # ------------------------------------------------------------------
-    # Extract 512-d backbone embeddings
+    # Extract 512-d image embeddings
     # ------------------------------------------------------------------
     img_embeds, img_labels = [], []
     for batch in img_loader:
         images = batch["image"].to(device)
-        emb = extract_embeddings(model, image=images)
+        emb = extract_image_embeddings(model, images)
         img_embeds.append(emb.cpu())
         img_labels.extend(batch["label"].tolist())
 
-    txt_embeds, txt_labels = [], []
-    for batch in txt_loader:
-        ids = batch["input_ids"].to(device)
-        mask = batch["attention_mask"].to(device)
-        emb = extract_embeddings(model, input_ids=ids, attention_mask=mask)
-        txt_embeds.append(emb.cpu())
-        txt_labels.extend(batch["label"].tolist())
-
     img_embeds = torch.cat(img_embeds)
-    txt_embeds = torch.cat(txt_embeds)
-
     img_labels = np.array(img_labels)
-    txt_labels = np.array(txt_labels)
+    img_embeds = F.normalize(img_embeds, dim=1)
 
-    # 1. Collect all embeddings as a tensor
-    all_embeddings = torch.cat([img_embeds, txt_embeds], dim=0)
+    # ------------------------------------------------------------------
+    # Use classifier weight rows as the actual text anchors the image
+    # encoder was trained against (one row per class).
+    # ------------------------------------------------------------------
+    anchors_all = F.normalize(
+        model.classifier.weight.detach().cpu(), dim=1
+    )                                                      # (num_classes, 512)
+    anchor_rows = anchors_all[label_order]                 # (n_classes, 512)
+    anchor_labels = np.array(label_order)
 
-    # 2. L2-normalize so t-SNE plots directional alignment
-    all_embeddings = F.normalize(all_embeddings, dim=1)
+    # Sanity metric: cosine similarity between each image and its own-class
+    # anchor vs. the mean similarity to all other selected-class anchors.
+    own_sims, other_sims = [], []
+    label_to_row = {l: i for i, l in enumerate(label_order)}
+    for emb, lbl in zip(img_embeds, img_labels):
+        own_sims.append(float((emb @ anchor_rows[label_to_row[int(lbl)]]).item()))
+        other_idx = [i for l, i in label_to_row.items() if l != int(lbl)]
+        if other_idx:
+            other_sims.append(
+                float((emb @ anchor_rows[other_idx].T).mean().item())
+            )
+    logger.info(
+        "Cosine sim(image, own-class anchor):    mean=%.4f",
+        float(np.mean(own_sims)),
+    )
+    logger.info(
+        "Cosine sim(image, other-class anchors): mean=%.4f",
+        float(np.mean(other_sims)) if other_sims else float("nan"),
+    )
+    logger.info("img_scale (classifier magnitude multiplier): %.4f",
+                float(model.img_scale.detach().cpu().item()))
 
-    # 3. Convert to numpy for t-SNE
+    # ------------------------------------------------------------------
+    # Concatenate and t-SNE
+    # ------------------------------------------------------------------
+    all_embeddings = torch.cat([img_embeds, anchor_rows], dim=0)
     all_embeddings_np = all_embeddings.cpu().numpy()
+    logger.info("Combined embedding shape: %s", all_embeddings_np.shape)
 
-    logger.info("Normalized Combined Embedding shape: %s", all_embeddings_np.shape)
-
-    # ------------------------------------------------------------------
-    # Map text labels (text_ds indexing) → image label space
-    # ------------------------------------------------------------------
-    txt_class_to_img_label = {}
-    for name in chosen_names:
-        txt_class_to_img_label[text_label_map[name]] = full_eval_ds.class_to_idx[name]
-    txt_labels_mapped = np.array([txt_class_to_img_label[l] for l in txt_labels])
-
-    # ------------------------------------------------------------------
-    # t-SNE reduction to 2-D
-    # ------------------------------------------------------------------
-    all_labels = np.concatenate([img_labels, txt_labels_mapped], axis=0)
+    all_labels = np.concatenate([img_labels, anchor_labels], axis=0)
     modality = np.array(
-        ["Image"] * len(img_embeds) + ["Text"] * len(txt_embeds)
+        ["Image"] * len(img_embeds) + ["Text"] * len(anchor_rows)
     )
 
     effective_perplexity = min(args.perplexity, max(5, len(all_embeddings_np) // 4))
@@ -228,7 +214,6 @@ def main():
     PALETTE = plt.cm.tab10.colors
 
     # Build a short display name for each chosen label
-    label_order = sorted(chosen_labels)
     label_to_color = {l: PALETTE[i % len(PALETTE)] for i, l in enumerate(label_order)}
 
     # Shorten class names for the legend (e.g. "BMW M3 Coupe 2012" stays readable)
@@ -245,15 +230,16 @@ def main():
             if not mask.any():
                 continue
             cname = label_to_class[label_idx]
+            legend_mod = "Anchor" if mod_name == "Text" else mod_name
             ax.scatter(
                 coords[mask, 0], coords[mask, 1],
                 c=[label_to_color[label_idx]],
                 marker=marker,
-                s=70 if mod_name == "Text" else 40,
-                alpha=0.85 if mod_name == "Text" else 0.65,
+                s=250 if mod_name == "Text" else 40,
+                alpha=0.95 if mod_name == "Text" else 0.65,
                 edgecolors="k" if mod_name == "Text" else "none",
-                linewidths=0.6,
-                label=f"{short_name(cname)} ({mod_name})",
+                linewidths=1.2 if mod_name == "Text" else 0.6,
+                label=f"{short_name(cname)} ({legend_mod})",
             )
 
     ax.set_title("Latent Space — L2-Normalized (t-SNE)", fontsize=14, weight="bold")
