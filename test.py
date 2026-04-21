@@ -2,10 +2,10 @@
 """
 test.py — Latent-space analysis for the Unpaired Multimodal Learner.
 
-Loads frozen checkpoint weights, extracts 512-d shared-backbone embeddings
-for both image and text samples across 5 selected car classes, reduces to
-2-D with t-SNE, and saves a scatter plot to latent_space.png.
-Includes a specialized high-res plot for Slide 7.
+Loads frozen checkpoint weights, extracts 512-d embeddings from the 
+shared latent space for both image and text samples across 5 selected car 
+classes, reduces to 2-D with t-SNE, and saves a scatter plot to 
+latent_space.png.
 """
 
 import argparse
@@ -88,7 +88,8 @@ def main():
 
     # Shuffled index split (same seed as train.py → identical split)
     n = len(full_eval_ds)
-    indices = torch.randperm(n, generator=torch.Generator().manual_seed(args.seed)).tolist()
+    indices = torch.randperm(
+        n, generator=torch.Generator().manual_seed(args.seed)).tolist()
     n_train = int(0.70 * n)
     n_val = int(0.15 * n)
     test_indices = indices[n_train + n_val:]
@@ -103,7 +104,8 @@ def main():
     chosen_labels = random.sample(unique_test_labels,
                                   min(args.n_classes, len(unique_test_labels)))
     chosen_set = set(chosen_labels)
-    label_to_class = {idx: name for name, idx in full_eval_ds.class_to_idx.items()}
+    label_to_class = {idx: name for name,
+                      idx in full_eval_ds.class_to_idx.items()}
     chosen_names = [label_to_class[l] for l in chosen_labels]
     label_order = sorted(chosen_labels)
     logger.info("Selected classes: %s", chosen_names)
@@ -167,7 +169,8 @@ def main():
     own_sims, other_sims = [], []
     label_to_row = {l: i for i, l in enumerate(label_order)}
     for emb, lbl in zip(img_embeds, img_labels):
-        own_sims.append(float((emb @ anchor_rows[label_to_row[int(lbl)]]).item()))
+        own_sims.append(
+            float((emb @ anchor_rows[label_to_row[int(lbl)]]).item()))
         other_idx = [i for l, i in label_to_row.items() if l != int(lbl)]
         if other_idx:
             other_sims.append(
@@ -196,7 +199,8 @@ def main():
         ["Image"] * len(img_embeds) + ["Text"] * len(anchor_rows)
     )
 
-    effective_perplexity = min(args.perplexity, max(5, len(all_embeddings_np) // 4))
+    effective_perplexity = min(
+        args.perplexity, max(5, len(all_embeddings_np) // 4))
     tsne = TSNE(
         n_components=2,
         perplexity=effective_perplexity,
@@ -214,7 +218,8 @@ def main():
     PALETTE = plt.cm.tab10.colors
 
     # Build a short display name for each chosen label
-    label_to_color = {l: PALETTE[i % len(PALETTE)] for i, l in enumerate(label_order)}
+    label_to_color = {l: PALETTE[i % len(PALETTE)]
+                      for i, l in enumerate(label_order)}
 
     # Shorten class names for the legend (e.g. "BMW M3 Coupe 2012" stays readable)
     def short_name(name):
@@ -242,7 +247,8 @@ def main():
                 label=f"{short_name(cname)} ({legend_mod})",
             )
 
-    ax.set_title("Latent Space — L2-Normalized (t-SNE)", fontsize=14, weight="bold")
+    ax.set_title("Latent Space — L2-Normalized (t-SNE)",
+                 fontsize=14, weight="bold")
     ax.set_xlabel("t-SNE dim 1")
     ax.set_ylabel("t-SNE dim 2")
     ax.legend(fontsize=7, loc="best", ncol=2, framealpha=0.9)
@@ -280,14 +286,15 @@ def main():
         linewidths=2, label='Text Anchor'
     )
 
-    ax2.set_title(f'The Unpaired Halo Effect:\n{short_cname}', fontsize=20, weight='bold', pad=20)
+    ax2.set_title(
+        f'The Unpaired Halo Effect:\n{short_cname}', fontsize=20, weight='bold', pad=20)
     ax2.legend(fontsize=14, loc='best', frameon=True, shadow=True)
     ax2.axis('off')
 
     fig2.tight_layout()
     slide7_output = "halo_effect_slide7.png"
     fig2.savefig(slide7_output, dpi=300, transparent=True)
-    
+
     logger.info("Slide 7 plot saved to %s", slide7_output)
     print(f"Isolated halo plot saved to {slide7_output}")
 

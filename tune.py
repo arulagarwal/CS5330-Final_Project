@@ -6,9 +6,9 @@ Grid:
     Learning Rate:    [1e-4, 5e-5]
     Projection Dim:   [256, 512]
 
-Each combination trains for up to 5 epochs with early stopping (patience=2
-on validation loss).  Results are printed to the console and the best
-parameter set is saved to best_params.txt.
+Each combination trains for up to 5 epochs. Results are printed to the console
+and the best parameter set is saved to best_params.txt.
+Evaluates dual-modality loss during the grid search for completeness.
 """
 
 import argparse
@@ -201,7 +201,8 @@ def main():
 
     # Shuffled index split (70 / 15 / 15)
     n = len(full_train_ds)
-    indices = torch.randperm(n, generator=torch.Generator().manual_seed(args.seed)).tolist()
+    indices = torch.randperm(
+        n, generator=torch.Generator().manual_seed(args.seed)).tolist()
     n_train = int(0.70 * n)
     n_val = int(0.15 * n)
 
@@ -234,13 +235,15 @@ def main():
     separator = "-" * len(header)
 
     print(f"\n{separator}")
-    print(f"  Grid Search — {len(grid)} combinations x up to {TUNE_EPOCHS} epochs")
+    print(
+        f"  Grid Search — {len(grid)} combinations x up to {TUNE_EPOCHS} epochs")
     print(f"{separator}")
     print(header)
     print(separator)
 
     for trial_idx, (lr, proj_dim) in enumerate(grid, 1):
-        logger.info("Trial %d/%d — lr=%g  proj_dim=%d", trial_idx, len(grid), lr, proj_dim)
+        logger.info("Trial %d/%d — lr=%g  proj_dim=%d",
+                    trial_idx, len(grid), lr, proj_dim)
 
         val_acc, val_loss, epochs_run = run_trial(
             lr=lr,
@@ -262,7 +265,8 @@ def main():
             "epochs": epochs_run,
         })
 
-        print(f"{lr:>10g} {proj_dim:>10d} {val_acc:>10.4f} {val_loss:>10.4f} {epochs_run:>8d}")
+        print(
+            f"{lr:>10g} {proj_dim:>10d} {val_acc:>10.4f} {val_loss:>10.4f} {epochs_run:>8d}")
 
     print(separator)
 
@@ -292,7 +296,8 @@ def main():
         f.write(f"\n{'=' * 50}\n")
         f.write("Full Grid Results\n")
         f.write(f"{'=' * 50}\n\n")
-        f.write(f"{'LR':>12} {'Proj Dim':>10} {'Val Acc':>10} {'Val Loss':>10} {'Epochs':>8}\n")
+        f.write(
+            f"{'LR':>12} {'Proj Dim':>10} {'Val Acc':>10} {'Val Loss':>10} {'Epochs':>8}\n")
         f.write("-" * 52 + "\n")
         for r in results:
             f.write(f"{r['lr']:>12g} {r['proj_dim']:>10d} {r['val_acc']:>10.4f} "
