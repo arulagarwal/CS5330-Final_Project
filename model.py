@@ -2,7 +2,7 @@
 """
 model.py — Unpaired Multimodal Learner for Stanford Cars classification.
 
-Architecture (following the reference UML paper):
+Architecture:
     1. Image encoder  — ViT-Small/16 (timm) → Linear → 512-d pooled features
     2. Text encoder   — DistilBERT (HuggingFace) → Linear → 512-d [CLS] features
     3. Classification  — Linear → 196 classes, scaled by a learnable img_scale
@@ -63,10 +63,9 @@ class TextEncoder(nn.Module):
 class UnpairedMultimodalLearner(nn.Module):
     """Unpaired multimodal classifier for Stanford Cars.
 
-    Follows the reference UML architecture: modality-specific encoders feed
-    directly into a shared linear classifier.  A learnable ``img_scale``
-    parameter scales the image logits.  The classifier can be warm-started
-    with zero-shot text anchors via :meth:`zero_shot_init`.
+    Modality-specific encoders feed directly into a shared linear classifier.
+    A learnable ``img_scale`` parameter scales the image logits. The classifier
+    can be warm-started with zero-shot text anchors via :meth:`zero_shot_init`.
 
     Parameters
     ----------

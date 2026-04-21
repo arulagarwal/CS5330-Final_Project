@@ -2,10 +2,9 @@
 """
 init_weights.py — Compute per-class text anchors for classifier initialization.
 
-Mirrors the zero-shot weight initialization strategy from the reference UML
-codebase (head.py:get_zero_shot_weights).  Passes all text descriptions through
-the frozen DistilBERT TextEncoder, averages the 512-d [CLS] embeddings per
-class, L2-normalizes along dim=1, and saves the [196, 512] tensor to disk.
+Passes all text descriptions through the frozen DistilBERT TextEncoder,
+averages the 512-d [CLS] embeddings per class, L2-normalizes along dim=1,
+and saves the [196, 512] tensor to disk.
 """
 
 import argparse

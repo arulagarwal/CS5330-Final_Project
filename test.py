@@ -2,10 +2,11 @@
 """
 test.py — Latent-space analysis for the Unpaired Multimodal Learner.
 
-Loads frozen checkpoint weights, extracts 512-d embeddings from the 
-shared latent space for both image and text samples across 5 selected car 
-classes, reduces to 2-D with t-SNE, and saves a scatter plot to 
-latent_space.png.
+Loads frozen checkpoint weights, extracts 512-d image embeddings for a
+handful of selected car classes, pairs them with the per-class classifier
+weight rows (the text anchors the image encoder was trained against),
+reduces the combined set to 2-D with t-SNE, and saves a scatter plot.
+A companion isolated "halo" plot is written for a single class.
 """
 
 import argparse
@@ -82,11 +83,11 @@ def main():
     images_dir = os.path.join(args.data_dir, "images")
 
     # ------------------------------------------------------------------
-    # Datasets – replicate the same train/val/test split used in train.py
+    # Datasets – identical shuffled 70/15/15 split using the shared seed
     # ------------------------------------------------------------------
     full_eval_ds = ImageDataset(images_dir, transform=get_eval_transform())
 
-    # Shuffled index split (same seed as train.py → identical split)
+    # Shuffled index split (70/15/15) — seeded for reproducibility
     n = len(full_eval_ds)
     indices = torch.randperm(
         n, generator=torch.Generator().manual_seed(args.seed)).tolist()
@@ -259,9 +260,9 @@ def main():
     print(f"\nLatent-space plot saved to {args.output}")
 
     # ==========================================
-    # SLIDE 7: ISOLATED HALO PLOT
+    # Isolated single-class halo plot
     # ==========================================
-    logger.info("Generating isolated 'Halo' plot for Slide 7...")
+    logger.info("Generating isolated single-class halo plot...")
 
     # Pick the first class from our randomly selected test classes
     target_label_idx = label_order[0]
@@ -292,11 +293,11 @@ def main():
     ax2.axis('off')
 
     fig2.tight_layout()
-    slide7_output = "halo_effect_slide7.png"
-    fig2.savefig(slide7_output, dpi=300, transparent=True)
+    halo_output = "halo_effect.png"
+    fig2.savefig(halo_output, dpi=300, transparent=True)
 
-    logger.info("Slide 7 plot saved to %s", slide7_output)
-    print(f"Isolated halo plot saved to {slide7_output}")
+    logger.info("Halo plot saved to %s", halo_output)
+    print(f"Isolated halo plot saved to {halo_output}")
 
 
 if __name__ == "__main__":
