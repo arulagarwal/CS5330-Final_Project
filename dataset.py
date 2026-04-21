@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 dataset.py — Unpaired image and text PyTorch datasets for multimodal learning.
-
 Provides:
     ImageDataset  — loads images from data/images/<ClassName>/*.jpg
     TextDataset   — loads descriptions from data/text/<ClassName>.csv, tokenized with DistilBERT
     get_image_dataloader / get_text_dataloader — independent DataLoaders for unpaired training
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
+
 """
 
 import csv

@@ -9,6 +9,9 @@ Grid:
 Each combination trains for up to 5 epochs. Results are printed to the console
 and the best parameter set is saved to best_params.txt.
 Evaluates dual-modality loss during the grid search for completeness.
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
+
 """
 
 import argparse

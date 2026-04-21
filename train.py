@@ -7,6 +7,9 @@ so the cross-modal synergy is baked into the weights.  Training optimizes
 only on image batches with Cross-Entropy loss.
 Saves the best checkpoint (by validation image accuracy) to checkpoints/.
 Runs a final top-1 accuracy evaluation on the held-out image test split.
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
+
 """
 
 import argparse

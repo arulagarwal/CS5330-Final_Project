@@ -8,6 +8,8 @@ Architecture:
     3. Classification  — Linear → 196 classes, scaled by a learnable img_scale
 
 The classifier can be initialized with zero-shot text anchors via zero_shot_init().
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
 """
 
 import torch

@@ -5,6 +5,8 @@ download_data.py — Download Stanford Cars dataset and generate synthetic unpai
 Usage:
     python download_data.py [--data-dir ./data] [--skip-images] [--skip-text]
                             [--num-descriptions 5] [--seed 42]
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
 """
 
 import argparse

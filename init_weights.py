@@ -5,6 +5,8 @@ init_weights.py — Compute per-class text anchors for classifier initialization
 Passes all text descriptions through the frozen DistilBERT TextEncoder,
 averages the 512-d [CLS] embeddings per class, L2-normalizes along dim=1,
 and saves the [196, 512] tensor to disk.
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
 """
 
 import argparse

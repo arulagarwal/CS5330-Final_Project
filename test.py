@@ -7,6 +7,8 @@ handful of selected car classes, pairs them with the per-class classifier
 weight rows (the text anchors the image encoder was trained against),
 reduces the combined set to 2-D with t-SNE, and saves a scatter plot.
 A companion isolated "halo" plot is written for a single class.
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
 """
 
 import argparse

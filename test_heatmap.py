@@ -5,6 +5,8 @@ test_heatmap.py — Cosine Similarity Heatmap for Modality Alignment.
 Calculates the centroids of image embeddings for 5 test classes and computes
 their raw cosine similarity against the corresponding text anchors. 
 A strong diagonal line approaching 1.0 indicates a closed modality gap.
+
+Authors: Arul Agarwal, Anirudh Bakare, and Utkarsh Milind Khursale
 """
 
 import argparse
